@@ -44,49 +44,7 @@
 #define DEFAULT_DPI_Y 3780
 #define DPI_FACTOR 39.37007874015748
 
-typedef struct {
-  uint32_t filesz;    /* the size of the BMP file in bytes */
-  uint16_t creator1;  /* reserved. */
-  uint16_t creator2;  /* reserved. */
-  uint32_t offset;    /* the offset, i.e. starting address,
-			 of the byte where the bitmap data can be found. */
-} bmp_header_t;
-
-typedef struct {
-  uint32_t header_sz;     /* the size of this header (40 bytes) */
-  uint32_t width;         /* the bitmap width in pixels */
-  uint32_t height;        /* the bitmap height in pixels */
-  uint16_t nplanes;       /* the number of color planes being used.
-			     Must be set to 1. */
-  uint16_t depth;         /* the number of bits per pixel,
-			     which is the color depth of the image.
-			     Typical values are 1, 4, 8, 16, 24 and 32. */
-  uint32_t compress_type; /* the compression method being used.
-			     See also bmp_compression_method_t. */
-  uint32_t bmp_bytesz;    /* the image size. This is the size of the raw bitmap
-			     data (see below), and should not be confused
-			     with the file size. */
-  uint32_t hres;          /* the horizontal resolution of the image.
-			     (pixel per meter) */
-  uint32_t vres;          /* the vertical resolution of the image.
-			     (pixel per meter) */
-  uint32_t ncolors;       /* the number of colors in the color palette,
-			     or 0 to default to 2<sup><i>n</i></sup>. */
-  uint32_t nimpcolors;    /* the number of important colors used,
-			     or 0 when every color is important;
-			     generally ignored. */
-} bmp_dib_v3_header_t;
-
 struct _bmpfile {
-  uint8_t magic[2];       /* the magic number used to identify the BMP file:
-			     0x42 0x4D (Hex code points for B and M).
-			     The following entries are possible:
-			     BM - Windows 3.1x, 95, NT, ... etc
-			     BA - OS/2 Bitmap Array
-			     CI - OS/2 Color Icon
-			     CP - OS/2 Color Pointer
-			     IC - OS/2 Icon
-			     PT - OS/2 Pointer. */
   bmp_header_t header;
   bmp_dib_v3_header_t dib;
 
@@ -329,6 +287,9 @@ bmpfile_t *
 bmp_create(uint32_t width, uint32_t height, uint32_t depth)
 {
   bmpfile_t *result;
+  double bytes_per_pixel;
+  uint32_t bytes_per_line;
+  uint32_t palette_size;
 
   if (depth != 1 && depth != 4 && depth != 8 && depth != 16 && depth != 24 &&
       depth != 32)
@@ -338,8 +299,8 @@ bmp_create(uint32_t width, uint32_t height, uint32_t depth)
 
   memset(result, 0, sizeof(bmpfile_t));
 
-  result->magic[0] = 'B';
-  result->magic[1] = 'M';
+  result->header.magic[0] = 'B';
+  result->header.magic[1] = 'M';
 
   result->dib.header_sz = 40;
   result->dib.width = width;
@@ -356,6 +317,23 @@ bmp_create(uint32_t width, uint32_t height, uint32_t depth)
 
   bmp_malloc_pixels(result);
   bmp_malloc_colors(result);
+
+  /* Calculate the field value of header and DIB */
+  bytes_per_pixel = (result->dib.depth * 1.0) / 8.0;
+  bytes_per_line = (int)ceil(bytes_per_pixel * result->dib.width);
+  if (bytes_per_line % 4 != 0)
+    bytes_per_line += 4 - bytes_per_line % 4;
+
+  result->dib.bmp_bytesz = bytes_per_line * result->dib.height;
+
+  palette_size = 0;
+  if (depth == 1 || depth == 4 || depth == 8)
+    palette_size = uint32_pow(2, result->dib.depth) * 4;
+  else if (result->dib.depth == 16)
+    palette_size = 3 * 4;
+
+  result->header.offset = 14 + result->dib.header_sz + palette_size;
+  result->header.filesz = result->header.offset + result->dib.bmp_bytesz;
 
   return result;
 }
@@ -386,16 +364,16 @@ bmp_get_depth(bmpfile_t *bmp)
   return bmp->dib.depth;
 }
 
-bmp_compression_method_t
-bmp_get_compression_method(bmpfile_t *bmp)
+bmp_header_t
+bmp_get_header(bmpfile_t *bmp)
 {
-  return (bmp_compression_method_t)bmp->dib.compress_type;
+  return bmp->header;
 }
 
-void
-bmp_set_compression_method(bmpfile_t *bmp, bmp_compression_method_t t)
+bmp_dib_v3_header_t
+bmp_get_dib(bmpfile_t *bmp)
 {
-  bmp->dib.compress_type = t;
+  return bmp->dib;
 }
 
 uint32_t
@@ -417,13 +395,13 @@ bmp_set_dpi(bmpfile_t *bmp, uint32_t x, uint32_t y)
   bmp->dib.vres = (uint32_t)(y * DPI_FACTOR);
 }
 
-rgb_pixel_t
+rgb_pixel_t *
 bmp_get_pixel(bmpfile_t *bmp, uint32_t x, uint32_t y)
 {
   if ((x >= bmp->dib.width) || (y >= bmp->dib.height))
     return NULL;
 
-  return bmp->pixels[x][y];
+  return &(bmp->pixels[x][y]);
 }
 
 bool
@@ -490,7 +468,7 @@ bmp_write_header(bmpfile_t *bmp, FILE *fp)
 
   if (_is_big_endian()) bmp_header_swap_endianess(&header);
 
-  fwrite(bmp->magic, sizeof(bmp->magic), 1, fp);
+  fwrite(header.magic, sizeof(header.magic), 1, fp);
   fwrite(&(header.filesz), sizeof(uint32_t), 1, fp);
   fwrite(&(header.creator1), sizeof(uint16_t), 1, fp);
   fwrite(&(header.creator2), sizeof(uint16_t), 1, fp);
@@ -650,32 +628,12 @@ bool
 bmp_save(bmpfile_t *bmp, const char *filename)
 {
   FILE *fp;
-  double bytes_per_pixel;
-  uint32_t bytes_per_line;
-  uint32_t palette_size;
   int row;
   unsigned char *buf;
 
   /* Create the file */
   if ((fp = fopen(filename, "wb")) == NULL)
     return FALSE;
-
-  /* Calculate the field value of header and DIB */
-  bytes_per_pixel = (bmp->dib.depth * 1.0) / 8.0;
-  bytes_per_line = (int)ceil(bytes_per_pixel * bmp->dib.width);
-  if (bytes_per_line % 4 != 0)
-    bytes_per_line += 4 - bytes_per_line % 4;
-
-  bmp->dib.bmp_bytesz = bytes_per_line * bmp->dib.height;
-
-  palette_size = 0;
-  if (bmp->dib.depth == 1 || bmp->dib.depth == 4 || bmp->dib.depth == 8)
-    palette_size = uint32_pow(2, bmp->dib.depth) * 4;
-  else if (bmp->dib.depth == 16)
-    palette_size = 3 * 4;
-
-  bmp->header.offset = 14 + bmp->dib.header_sz + palette_size;
-  bmp->header.filesz = bmp->header.offset + bmp->dib.bmp_bytesz;
 
   /* Write the file */
   bmp_write_header(bmp, fp);
@@ -706,6 +664,14 @@ bmp_save(bmpfile_t *bmp, const char *filename)
     }
   }
   else {
+    double bytes_per_pixel;
+    int bytes_per_line;
+
+    bytes_per_pixel = (bmp->dib.depth * 1.0) / 8.0;
+    bytes_per_line = (int)ceil(bytes_per_pixel * bmp->dib.width);
+    if (bytes_per_line % 4 != 0)
+      bytes_per_line += 4 - bytes_per_line % 4;
+
     buf = malloc(bytes_per_line);
 
     for (row = bmp->dib.height - 1; row >= 0; --row) {
