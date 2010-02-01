@@ -1,7 +1,7 @@
 m4_define([libbmp_major_version], [0])
 m4_define([libbmp_minor_version], [1])
-m4_define([libbmp_micro_version], [2])
-m4_define([libbmp_interface_age], [1])
+m4_define([libbmp_micro_version], [3])
+m4_define([libbmp_interface_age], [2])
 m4_define([libbmp_binary_age],
           [m4_eval(100 * libbmp_minor_version + libbmp_micro_version)])
 m4_define([libbmp_version],
