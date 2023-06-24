@@ -3,10 +3,10 @@ Automatically exported from code.google.com/p/libbmp
 
 
 
-The BMP library for read and write BMP file.
+A library for creating BMP file programmatically.
 
 Introduction
-libbmp is a simple, cross-platform, open source (revised LGPL) C library designed for easily reading, writing, and modifying Windows bitmap (BMP) image files. The library is oriented towards the novice programmer with little formal experience, but it is sufficiently capable for anybody who desires to do I/O and pixel operations on uncompressed 1, 4, 8, 16, 24, and 32 bpp (bits per pixel) BMP files.
+libbmp is a simple, cross-platform, open source (revised LGPL) C library designed for easily writing Windows bitmap (BMP) image files. The library is oriented towards the novice programmer with little formal experience, but it is sufficiently capable for anybody who desires to do I/O and pixel operations on uncompressed 1, 4, 8, 16, 24, and 32 bpp (bits per pixel) BMP files.
 
 libbmp is intended to be cross-platform on both little-endian (e.g., x86, x86-64) and big-endian (e.g., IBM PowerPC, Sun Sparc) architectures. So far, it has been tested on x86 with Linux (2.6.x kernels and gcc and MinGW/gcc) and Windows (XP Pro with msvc6).
 
